@@ -1,0 +1,9 @@
+Flask
+Flask-SQLAlchemy
+Flask-Security-Too
+Flask-Cors
+Werkzeug
+redis
+celery
+email-validator
+bcrypt
