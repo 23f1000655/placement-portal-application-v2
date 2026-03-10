@@ -2,32 +2,33 @@ from flask import Blueprint, request, jsonify, send_file
 from flask_security import auth_required, current_user
 import os
 import re
-
 from models import database, Student, Company, PlacementDrive, Application
+from extensions import cache
 
 student_blueprint = Blueprint("student", __name__)
 
+# ── Cache TTLs ────────────────────────────────────────────────────────────────
+TTL_COMPANIES = 300   # 5 min  — approved company list, changes rarely
+TTL_COMPANY   = 120   # 2 min  — per-student company detail (includes already_applied)
+TTL_APPS      = 60    # 1 min  — student's own applications, want near-realtime
+TTL_HISTORY   = 120   # 2 min  — history view
+
+
+def _student_company_key(company_id, student_id):
+    """Per-student, per-company detail cache key."""
+    return f"student:company:{company_id}:{student_id}"
+
+def _student_apps_key(student_id):
+    return f"student:apps:{student_id}"
+
+def _student_history_key(student_id):
+    return f"student:history:{student_id}"
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  ELIGIBILITY TEXT PARSER
-#  Parses a freeform string like:
-#    "CGPA > 8.0, CS/IT students, 3rd year and above"
-#    "cgpa>=7.5, Computer Science, 4th Year"
-#    "CGPA ≥ 7.0"
 # ══════════════════════════════════════════════════════════════════════════════
 
 def parse_eligibility(text):
-    """
-    Parse a freeform eligibility string into structured components.
-    Returns a dict:
-      {
-        'cgpa_op':    str | None,   e.g. '>', '>=', '=', '<', '<='
-        'cgpa_val':   float | None,
-        'year_val':   int | None,
-        'year_is_min': bool,         True  → eligible_year and above
-        'branches':   list[str]      explicit branch names found (may be empty)
-      }
-    """
     result = {
         'cgpa_op':    None,
         'cgpa_val':   None,
@@ -38,16 +39,12 @@ def parse_eligibility(text):
     if not text:
         return result
 
-    # Normalise unicode comparison symbols
     t = (text
          .replace('≥', '>=')
          .replace('≤', '<=')
          .replace('⩾', '>=')
-         .replace('⩽', '<=')
-         .replace('>', '>')
-         .replace('<', '<'))
+         .replace('⩽', '<='))
 
-    # ── 1. CGPA ──────────────────────────────────────────────────────────────
     cgpa_match = re.search(
         r'cgpa\s*(>=|<=|>|<|=)\s*(\d+\.?\d*)',
         t, re.IGNORECASE
@@ -56,55 +53,37 @@ def parse_eligibility(text):
         result['cgpa_op']  = cgpa_match.group(1)
         result['cgpa_val'] = float(cgpa_match.group(2))
 
-    # ── 2. Year of study ─────────────────────────────────────────────────────
-    # Support "3rd year and above", "Year 4+", "4th Year", "year 2"
     above_match = re.search(
         r'(\d+)(st|nd|rd|th)?\s*year\s*(and\s*above|or\s*above|\+)',
         t, re.IGNORECASE
     )
-    year_match = re.search(
-        r'(\d+)(st|nd|rd|th)?\s*year',
-        t, re.IGNORECASE
-    )
+    year_match = re.search(r'(\d+)(st|nd|rd|th)?\s*year', t, re.IGNORECASE)
     if not year_match:
         year_match = re.search(r'year\s*(\d+)', t, re.IGNORECASE)
-
     if year_match:
         result['year_val']    = int(year_match.group(1))
         result['year_is_min'] = bool(above_match)
 
-    # ── 3. Branch names ───────────────────────────────────────────────────────
-    # Strip out the CGPA token and year token, then look at what's left
-    clean = re.sub(
-        r'cgpa\s*(>=|<=|>|<|=)\s*\d+\.?\d*', '', t, flags=re.IGNORECASE
-    )
-    clean = re.sub(
-        r'(\d+)(st|nd|rd|th)?\s*year(\s*(and|or)\s*above|\+)?',
-        '', clean, flags=re.IGNORECASE
-    )
-    clean = re.sub(
-        r'year\s*\d+(\s*(and|or)\s*above|\+)?',
-        '', clean, flags=re.IGNORECASE
-    )
+    clean = re.sub(r'cgpa\s*(>=|<=|>|<|=)\s*\d+\.?\d*', '', t, flags=re.IGNORECASE)
+    clean = re.sub(r'(\d+)(st|nd|rd|th)?\s*year(\s*(and|or)\s*above|\+)?',
+                   '', clean, flags=re.IGNORECASE)
+    clean = re.sub(r'year\s*\d+(\s*(and|or)\s*above|\+)?',
+                   '', clean, flags=re.IGNORECASE)
 
-    # Generic words that are NOT branch names
     stopwords = {
         'students', 'student', 'only', 'and', 'or', 'above',
         'minimum', 'min', 'required', 'all', 'any', 'with', 'having',
         'branches', 'branch', 'year', 'years', 'above'
     }
-
     parts = [p.strip() for p in clean.split(',') if p.strip()]
     result['branches'] = [
         p for p in parts
         if p.lower() not in stopwords and len(p) > 1
     ]
-
     return result
 
 
 def cgpa_passes(student_cgpa_raw, op, required_val):
-    """Return True if student's CGPA satisfies the operator/value constraint."""
     if student_cgpa_raw is None:
         return False
     val = float(student_cgpa_raw)
@@ -149,11 +128,9 @@ def update_profile():
     this_student, error = get_verified_student()
     if error:
         return error
-
     incoming_data = request.get_json()
     if not incoming_data:
         return jsonify({"error": "No data received"}), 400
-
     if incoming_data.get("full_name", "").strip():
         this_student.full_name = incoming_data["full_name"].strip()
     if "branch" in incoming_data:
@@ -166,8 +143,15 @@ def update_profile():
         this_student.phone = incoming_data["phone"].strip()
     if "skills" in incoming_data:
         this_student.skills = incoming_data["skills"].strip()
-
     database.session.commit()
+
+    # Profile change may affect eligibility checks stored in company detail cache
+    # Bust all company detail caches for this student (wildcard not supported in
+    # simple Redis cache, so we track via the apps + history keys instead)
+    cache.delete(_student_apps_key(this_student.id))
+    cache.delete(_student_history_key(this_student.id))
+    cache.delete("admin:students")
+
     return jsonify({
         "message": "Profile updated successfully.",
         "student": this_student.to_dict()
@@ -182,7 +166,14 @@ def get_all_companies():
         return error
 
     search_query = request.args.get("search", "").strip().lower()
-    all_approved = Company.query.filter_by(approval_status="approved").all()
+
+    # Only cache the unfiltered list; search results vary per query
+    if not search_query:
+        cached = cache.get("student:companies")
+        if cached:
+            return jsonify(cached), 200
+
+    all_approved     = Company.query.filter_by(approval_status="approved").all()
     active_companies = [c for c in all_approved if not c.user.is_blacklisted]
 
     if search_query:
@@ -200,7 +191,12 @@ def get_all_companies():
         ).count()
         result.append(company_dict)
 
-    return jsonify({"companies": result}), 200
+    data = {"companies": result}
+
+    if not search_query:
+        cache.set("student:companies", data, timeout=TTL_COMPANIES)
+
+    return jsonify(data), 200
 
 
 @student_blueprint.route("/company/<int:company_id>", methods=["GET"])
@@ -210,11 +206,18 @@ def get_company_detail(company_id):
     if error:
         return error
 
+    search_query = request.args.get("search", "").strip().lower()
+    ck = _student_company_key(company_id, this_student.id)
+
+    # Only cache non-search requests
+    if not search_query:
+        cached = cache.get(ck)
+        if cached:
+            return jsonify(cached), 200
+
     chosen_company = Company.query.get(company_id)
     if not chosen_company:
         return jsonify({"error": "Company not found"}), 404
-
-    search_query = request.args.get("search", "").strip().lower()
 
     open_drives = PlacementDrive.query.filter_by(
         company_id=company_id, status="approved"
@@ -230,10 +233,10 @@ def get_company_detail(company_id):
             or search_query in (d.eligible_branches or "").lower()
         ]
 
-    already_applied_ids = [
+    already_applied_ids = {
         app.drive_id for app in
         Application.query.filter_by(student_id=this_student.id).all()
-    ]
+    }
 
     drives_data = []
     for drive in open_drives:
@@ -241,10 +244,15 @@ def get_company_detail(company_id):
         drive_dict["already_applied"] = drive.id in already_applied_ids
         drives_data.append(drive_dict)
 
-    return jsonify({
+    data = {
         "company": chosen_company.to_dict(),
         "drives":  drives_data
-    }), 200
+    }
+
+    if not search_query:
+        cache.set(ck, data, timeout=TTL_COMPANY)
+
+    return jsonify(data), 200
 
 
 @student_blueprint.route("/apply/<int:drive_id>", methods=["POST"])
@@ -260,26 +268,19 @@ def apply_to_drive(drive_id):
     if chosen_drive.status != "approved":
         return jsonify({"error": "This drive is not open for applications"}), 400
 
-    # ── Duplicate application check ───────────────────────────────────────────
     duplicate = Application.query.filter_by(
         student_id=this_student.id, drive_id=drive_id
     ).first()
     if duplicate:
         return jsonify({"error": "You have already applied to this drive"}), 409
 
-    # ── Eligibility validation ────────────────────────────────────────────────
-    # Parse the freeform eligibility text first
-    parsed = parse_eligibility(chosen_drive.eligible_branches or "")
-
-    # Decide final CGPA constraint:
-    # Text takes priority; fall back to the numeric minimum_cgpa column
+    parsed   = parse_eligibility(chosen_drive.eligible_branches or "")
     cgpa_op  = parsed['cgpa_op']
     cgpa_val = parsed['cgpa_val']
     if cgpa_op is None and chosen_drive.minimum_cgpa is not None:
         cgpa_op  = '>='
         cgpa_val = float(chosen_drive.minimum_cgpa)
 
-    # 1. CGPA check
     if cgpa_op and cgpa_val is not None:
         if this_student.cgpa is None:
             return jsonify({
@@ -296,14 +297,12 @@ def apply_to_drive(drive_id):
                 )
             }), 403
 
-    # Decide final Year constraint
     req_year    = parsed['year_val']
     year_is_min = parsed['year_is_min']
     if req_year is None and chosen_drive.eligible_year is not None:
         req_year    = int(chosen_drive.eligible_year)
         year_is_min = False
 
-    # 2. Year of study check
     if req_year is not None:
         if this_student.study_year is None:
             qualifier = f"Year {req_year}+" if year_is_min else f"Year {req_year}"
@@ -313,9 +312,8 @@ def apply_to_drive(drive_id):
                     f"Please update your profile with your current year before applying."
                 )
             }), 403
-
-        student_year  = int(this_student.study_year)
-        passes_year   = (student_year >= req_year) if year_is_min else (student_year == req_year)
+        student_year = int(this_student.study_year)
+        passes_year  = (student_year >= req_year) if year_is_min else (student_year == req_year)
         if not passes_year:
             qualifier = f"Year {req_year} and above" if year_is_min else f"Year {req_year}"
             return jsonify({
@@ -325,7 +323,6 @@ def apply_to_drive(drive_id):
                 )
             }), 403
 
-    # 3. Branch check — only enforce when explicit branch names were parsed
     if parsed['branches']:
         student_branch = (this_student.branch or "").strip().lower()
         if not student_branch:
@@ -335,9 +332,7 @@ def apply_to_drive(drive_id):
                     "Please update your profile with your branch before applying."
                 )
             }), 403
-
         allowed_lower = [b.lower() for b in parsed['branches']]
-        # Fuzzy contains-match so "CS/IT" matches "computer science" or "information technology"
         branch_ok = any(
             student_branch in b or b in student_branch
             for b in allowed_lower
@@ -350,7 +345,6 @@ def apply_to_drive(drive_id):
                 )
             }), 403
 
-    # ── Resume upload ─────────────────────────────────────────────────────────
     uploaded_file = request.files.get("resume")
     if not uploaded_file or uploaded_file.filename == "":
         return jsonify({"error": "Please upload your resume (PDF) to apply"}), 400
@@ -362,7 +356,6 @@ def apply_to_drive(drive_id):
     saved_filename = f"student_{this_student.id}_resume.pdf"
     save_path      = os.path.join(upload_folder, saved_filename)
     uploaded_file.save(save_path)
-
     this_student.resume_path = os.path.join("static", "uploads", "resumes", saved_filename)
     database.session.flush()
 
@@ -373,6 +366,13 @@ def apply_to_drive(drive_id):
     )
     database.session.add(new_application)
     database.session.commit()
+
+    # Applying changes: student's app list, history, and the company detail
+    # page for this student (already_applied flag changed)
+    cache.delete(_student_apps_key(this_student.id))
+    cache.delete(_student_history_key(this_student.id))
+    cache.delete(_student_company_key(chosen_drive.company_id, this_student.id))
+    cache.delete("admin:applications")
 
     return jsonify({
         "message":     f"Successfully applied to {chosen_drive.drive_name}!",
@@ -400,12 +400,19 @@ def get_my_applications():
     this_student, error = get_verified_student()
     if error:
         return error
+
+    ck     = _student_apps_key(this_student.id)
+    cached = cache.get(ck)
+    if cached:
+        return jsonify(cached), 200
+
     all_apps = Application.query.filter_by(
         student_id=this_student.id
     ).order_by(Application.applied_on.desc()).all()
-    return jsonify({
-        "applications": [app.to_dict() for app in all_apps]
-    }), 200
+
+    data = {"applications": [app.to_dict() for app in all_apps]}
+    cache.set(ck, data, timeout=TTL_APPS)
+    return jsonify(data), 200
 
 
 @student_blueprint.route("/history", methods=["GET"])
@@ -415,13 +422,18 @@ def get_history():
     if error:
         return error
 
+    ck     = _student_history_key(this_student.id)
+    cached = cache.get(ck)
+    if cached:
+        return jsonify(cached), 200
+
     all_apps = Application.query.filter_by(
         student_id=this_student.id
     ).order_by(Application.applied_on.desc()).all()
 
     history_rows = []
     for each_app in all_apps:
-        drive = each_app.drive
+        drive          = each_app.drive
         display_result = "cancelled" if (drive and drive.status == "cancelled") else each_app.status
         history_rows.append({
             "application_id": each_app.id,
@@ -434,7 +446,36 @@ def get_history():
             "status":         display_result
         })
 
-    return jsonify({
+    data = {
         "student": this_student.to_dict(),
         "history": history_rows
-    }), 200
+    }
+    cache.set(ck, data, timeout=TTL_HISTORY)
+    return jsonify(data), 200
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  ASYNC CSV EXPORT  (Milestone c)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@student_blueprint.route("/export-csv", methods=["POST"])
+@auth_required()
+def trigger_csv_export():
+    """
+    Student clicks 'Export History' → queues a Celery task.
+    The task builds a CSV and emails it to the student.
+    Returns 202 immediately so the UI shows a 'check your email' banner.
+    """
+    this_student, error = get_verified_student()
+    if error:
+        return error
+
+    from tasks import export_applications_csv
+    export_applications_csv.delay(this_student.id)
+
+    return jsonify({
+        "message": (
+            "Your export is being prepared. "
+            f"You will receive a CSV at {this_student.user.email} shortly!"
+        )
+    }), 202

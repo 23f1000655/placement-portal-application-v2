@@ -912,25 +912,49 @@ const StudentDashboard = {
                         <p>Browse companies, apply to drives and track your applications.</p>
                     </div>
                     <div class="d-flex gap-2 flex-wrap">
-                        <button class="student-tab-btn" @click="openEditProfileModal"><i class="bi bi-person-gear"></i> Edit Profile</button>
-                        <button class="student-tab-btn" @click="openHistoryModal"><i class="bi bi-clock-history"></i> History</button>
+                        <button class="student-tab-btn" @click="openEditProfileModal">
+                            <i class="bi bi-person-gear"></i> Edit Profile
+                        </button>
+                        <button class="student-tab-btn" @click="openHistoryModal">
+                            <i class="bi bi-clock-history"></i> History
+                        </button>
+                        <!-- NEW: Export CSV button -->
+                        <button class="student-tab-btn" @click="triggerCsvExport"
+                                :disabled="exportingCsv"
+                                style="background:rgba(255,255,255,0.18);">
+                            <span v-if="exportingCsv" class="hs-spinner me-1"
+                                  style="width:14px;height:14px;border-width:2px;"></span>
+                            <i v-if="!exportingCsv" class="bi bi-download"></i>
+                            {{ exportingCsv ? 'Queuing...' : 'Export History' }}
+                        </button>
                     </div>
                 </div>
-                <div v-if="flashMessage" class="alert fade-in mb-3 d-flex align-items-center gap-2" :class="flashType === 'success' ? 'alert-success' : 'alert-danger'" style="border-radius:10px;">
+
+                <div v-if="flashMessage" class="alert fade-in mb-3 d-flex align-items-center gap-2"
+                     :class="flashType === 'success' ? 'alert-success' : 'alert-danger'"
+                     style="border-radius:10px;">
                     <i :class="flashType === 'success' ? 'bi bi-check-circle-fill' : 'bi bi-x-circle-fill'"></i>
                     {{ flashMessage }}
                 </div>
+
                 <div class="student-search-wrap">
                     <i class="bi bi-search s-search-icon"></i>
                     <input type="text" v-model="searchText" placeholder="Search companies by name..." />
                 </div>
+
+                <!-- Companies table -->
                 <div class="student-table-card">
                     <div class="student-table-header">
                         <div><h5 class="mb-0">🏢 Organizations</h5><small class="text-muted">Approved companies registered on HireSphere</small></div>
                         <span class="badge rounded-pill" style="background:#ccfbf1; color:#0f766e; font-size:0.8rem;">{{ filteredCompanies.length }}</span>
                     </div>
-                    <div v-if="loadingCompanies" class="table-loading-state"><div class="spinner-border spinner-border-sm me-2" style="color:#0d9488;"></div> Loading companies...</div>
-                    <div v-else-if="filteredCompanies.length === 0" class="table-empty-state"><div style="font-size:2.5rem;">🏢</div><p class="mt-2 text-muted">No companies found.</p></div>
+                    <div v-if="loadingCompanies" class="table-loading-state">
+                        <div class="spinner-border spinner-border-sm me-2" style="color:#0d9488;"></div> Loading companies...
+                    </div>
+                    <div v-else-if="filteredCompanies.length === 0" class="table-empty-state">
+                        <div style="font-size:2.5rem;">🏢</div>
+                        <p class="mt-2 text-muted">No companies found.</p>
+                    </div>
                     <div v-else class="table-responsive">
                         <table class="table student-tbl">
                             <thead><tr><th>#</th><th>Company Name</th><th>Website</th><th>About</th><th>Open Drives</th><th>Action</th></tr></thead>
@@ -938,25 +962,50 @@ const StudentDashboard = {
                                 <tr v-for="(company, index) in filteredCompanies" :key="company.id">
                                     <td class="text-muted">{{ index + 1 }}</td>
                                     <td class="fw-semibold">{{ company.company_name }}</td>
-                                    <td><a v-if="company.website" :href="company.website" target="_blank" style="color:#0d9488; font-size:0.85rem; word-break:break-all;">{{ company.website }}</a><span v-else class="text-muted">—</span></td>
-                                    <td style="max-width:220px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ company.description || '—' }}</td>
+                                    <td>
+                                        <a v-if="company.website" :href="company.website" target="_blank"
+                                           style="color:#0d9488; font-size:0.85rem; word-break:break-all;">
+                                            {{ company.website }}
+                                        </a>
+                                        <span v-else class="text-muted">—</span>
+                                    </td>
+                                    <td style="max-width:220px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                                        {{ company.description || '—' }}
+                                    </td>
                                     <td><span class="hs-badge hs-badge-info">{{ company.open_drives_count }} drives</span></td>
-                                    <td><button class="btn-teal-outline" @click="goToCompanyPage(company.id)"><i class="bi bi-eye me-1"></i>View Details</button></td>
+                                    <td>
+                                        <button class="btn-teal-outline" @click="goToCompanyPage(company.id)">
+                                            <i class="bi bi-eye me-1"></i>View Details
+                                        </button>
+                                    </td>
                                 </tr>
                             </tbody>
                         </table>
                     </div>
                 </div>
+
+                <!-- Applied drives table -->
                 <div class="student-table-card">
                     <div class="student-table-header">
                         <div><h5 class="mb-0">📝 Applied Drives</h5><small class="text-muted">All drives you have applied to</small></div>
                         <span class="badge rounded-pill" style="background:#ccfbf1; color:#0f766e; font-size:0.8rem;">{{ myApplications.length }}</span>
                     </div>
-                    <div v-if="loadingApplications" class="table-loading-state"><div class="spinner-border spinner-border-sm me-2" style="color:#0d9488;"></div> Loading...</div>
-                    <div v-else-if="myApplications.length === 0" class="table-empty-state"><div style="font-size:2.5rem;">📝</div><p class="mt-2 text-muted">You haven't applied to any drives yet.</p></div>
+                    <div v-if="loadingApplications" class="table-loading-state">
+                        <div class="spinner-border spinner-border-sm me-2" style="color:#0d9488;"></div> Loading...
+                    </div>
+                    <div v-else-if="myApplications.length === 0" class="table-empty-state">
+                        <div style="font-size:2.5rem;">📝</div>
+                        <p class="mt-2 text-muted">You haven't applied to any drives yet.</p>
+                    </div>
                     <div v-else class="table-responsive">
                         <table class="table student-tbl">
-                            <thead><tr><th>#</th><th>Drive Name</th><th>Company</th><th>Applied On</th><th>Interview Date</th><th>Status</th><th>Action</th></tr></thead>
+                            <thead>
+                                <tr>
+                                    <th>#</th><th>Drive Name</th><th>Company</th>
+                                    <th>Applied On</th><th>Interview Date</th>
+                                    <th>Status</th><th>Action</th>
+                                </tr>
+                            </thead>
                             <tbody>
                                 <tr v-for="(app, index) in myApplications" :key="app.id">
                                     <td class="text-muted">{{ index + 1 }}</td>
@@ -964,31 +1013,53 @@ const StudentDashboard = {
                                     <td>{{ app.company_name }}</td>
                                     <td style="font-size:0.85rem;">{{ niceDate(app.applied_on) }}</td>
                                     <td>
-                                        <span v-if="app.interview_date" style="color:#0d9488; font-weight:600; font-size:0.85rem;">📅 {{ app.interview_date }}</span>
+                                        <span v-if="app.interview_date"
+                                              style="color:#0d9488; font-weight:600; font-size:0.85rem;">
+                                            📅 {{ app.interview_date }}
+                                        </span>
                                         <span v-else class="text-muted">—</span>
                                     </td>
-                                    <td><span class="hs-badge" :class="statusBadgeClass(app.status)">{{ statusLabel(app.status) }}</span></td>
-                                    <td><button class="btn-teal-outline" @click="openAppliedDriveModal(app)"><i class="bi bi-eye me-1"></i>View Details</button></td>
+                                    <td>
+                                        <span class="hs-badge" :class="statusBadgeClass(app.status)">
+                                            {{ statusLabel(app.status) }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <button class="btn-teal-outline" @click="openAppliedDriveModal(app)">
+                                            <i class="bi bi-eye me-1"></i>View Details
+                                        </button>
+                                    </td>
                                 </tr>
                             </tbody>
                         </table>
                     </div>
                 </div>
             </div>
+
             <!-- History Modal -->
             <div class="hs-modal-overlay" v-if="showHistoryModal" @click.self="showHistoryModal = false">
                 <div class="hs-modal-box fade-in" style="max-width:820px;">
                     <button class="hs-modal-close" @click="showHistoryModal = false"><i class="bi bi-x-lg"></i></button>
                     <p class="text-muted mb-1" style="font-size:0.8rem; text-transform:uppercase; letter-spacing:1px; font-weight:600;">All Time Record</p>
                     <h4 class="fw-bold mb-1" style="color:#0d9488;">Student Application History</h4>
-                    <div v-if="loadingHistory" class="text-center py-4"><div class="spinner-border spinner-border-sm" style="color:#0d9488;"></div></div>
+                    <div v-if="loadingHistory" class="text-center py-4">
+                        <div class="spinner-border spinner-border-sm" style="color:#0d9488;"></div>
+                    </div>
                     <template v-else>
                         <p class="mb-0 fw-semibold" style="font-size:0.95rem; color:#1e293b;">{{ historyStudentName }}</p>
                         <p class="text-muted mb-4" style="font-size:0.85rem;">{{ historyDepartment || '—' }}</p>
-                        <div v-if="historyRows.length === 0" class="table-empty-state py-3"><div style="font-size:2rem;">📭</div><p class="mt-2 text-muted">No applications in history yet.</p></div>
+                        <div v-if="historyRows.length === 0" class="table-empty-state py-3">
+                            <div style="font-size:2rem;">📭</div>
+                            <p class="mt-2 text-muted">No applications in history yet.</p>
+                        </div>
                         <div v-else class="table-responsive">
                             <table class="table student-tbl">
-                                <thead><tr><th>#</th><th>Drive Name</th><th>Job Title</th><th>Company</th><th>Location</th><th>Interview Date</th><th>Result</th></tr></thead>
+                                <thead>
+                                    <tr>
+                                        <th>#</th><th>Drive Name</th><th>Job Title</th><th>Company</th>
+                                        <th>Location</th><th>Interview Date</th><th>Result</th>
+                                    </tr>
+                                </thead>
                                 <tbody>
                                     <tr v-for="(row, index) in historyRows" :key="row.application_id">
                                         <td class="text-muted">{{ index + 1 }}</td>
@@ -997,10 +1068,17 @@ const StudentDashboard = {
                                         <td>{{ row.company_name }}</td>
                                         <td>{{ row.location || '—' }}</td>
                                         <td>
-                                            <span v-if="row.interview_date" style="color:#0d9488; font-weight:600; font-size:0.85rem;">📅 {{ row.interview_date }}</span>
+                                            <span v-if="row.interview_date"
+                                                  style="color:#0d9488; font-weight:600; font-size:0.85rem;">
+                                                📅 {{ row.interview_date }}
+                                            </span>
                                             <span v-else class="text-muted">—</span>
                                         </td>
-                                        <td><span class="hs-badge" :class="statusBadgeClass(row.status)">{{ statusLabel(row.status) }}</span></td>
+                                        <td>
+                                            <span class="hs-badge" :class="statusBadgeClass(row.status)">
+                                                {{ statusLabel(row.status) }}
+                                            </span>
+                                        </td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -1008,14 +1086,20 @@ const StudentDashboard = {
                     </template>
                 </div>
             </div>
+
             <!-- Edit Profile Modal -->
             <div class="hs-modal-overlay" v-if="showEditProfileModal" @click.self="showEditProfileModal = false">
                 <div class="hs-modal-box fade-in" style="max-width:520px;">
                     <button class="hs-modal-close" @click="showEditProfileModal = false"><i class="bi bi-x-lg"></i></button>
                     <p class="text-muted mb-1" style="font-size:0.8rem; text-transform:uppercase; letter-spacing:1px; font-weight:600;">Your Details</p>
                     <h4 class="fw-bold mb-4" style="color:#0d9488;">Edit Profile</h4>
-                    <div v-if="profileError" class="hs-alert hs-alert-error mb-3"><i class="bi bi-exclamation-circle me-2"></i>{{ profileError }}</div>
-                    <div class="mb-3"><label class="form-label fw-semibold" style="font-size:0.88rem;">Full Name</label><input type="text" class="form-control" v-model="profileForm.full_name" /></div>
+                    <div v-if="profileError" class="hs-alert hs-alert-error mb-3">
+                        <i class="bi bi-exclamation-circle me-2"></i>{{ profileError }}
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold" style="font-size:0.88rem;">Full Name</label>
+                        <input type="text" class="form-control" v-model="profileForm.full_name" />
+                    </div>
                     <div class="row g-3 mb-3">
                         <div class="col-6">
                             <label class="form-label fw-semibold" style="font-size:0.88rem;">Branch / Department</label>
@@ -1023,7 +1107,8 @@ const StudentDashboard = {
                                 <option value="">Select branch</option>
                                 <option>Computer Science</option><option>Information Technology</option>
                                 <option>Electronics & Communication</option><option>Electrical Engineering</option>
-                                <option>Mechanical Engineering</option><option>Civil Engineering</option><option>Other</option>
+                                <option>Mechanical Engineering</option><option>Civil Engineering</option>
+                                <option>Other</option>
                             </select>
                         </div>
                         <div class="col-6">
@@ -1036,13 +1121,27 @@ const StudentDashboard = {
                         </div>
                     </div>
                     <div class="row g-3 mb-3">
-                        <div class="col-6"><label class="form-label fw-semibold" style="font-size:0.88rem;">CGPA</label><input type="number" class="form-control" step="0.1" min="0" max="10" v-model="profileForm.cgpa" /></div>
-                        <div class="col-6"><label class="form-label fw-semibold" style="font-size:0.88rem;">Phone</label><input type="tel" class="form-control" v-model="profileForm.phone" /></div>
+                        <div class="col-6">
+                            <label class="form-label fw-semibold" style="font-size:0.88rem;">CGPA</label>
+                            <input type="number" class="form-control" step="0.1" min="0" max="10"
+                                   v-model="profileForm.cgpa" />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label fw-semibold" style="font-size:0.88rem;">Phone</label>
+                            <input type="tel" class="form-control" v-model="profileForm.phone" />
+                        </div>
                     </div>
-                    <div class="mb-4"><label class="form-label fw-semibold" style="font-size:0.88rem;">Skills</label><input type="text" class="form-control" placeholder="e.g. Python, React, SQL" v-model="profileForm.skills" /></div>
+                    <div class="mb-4">
+                        <label class="form-label fw-semibold" style="font-size:0.88rem;">Skills</label>
+                        <input type="text" class="form-control" placeholder="e.g. Python, React, SQL"
+                               v-model="profileForm.skills" />
+                    </div>
                     <div class="d-flex justify-content-end gap-2">
-                        <button class="btn btn-outline-secondary fw-semibold" @click="showEditProfileModal = false">Cancel</button>
-                        <button class="btn-teal-solid" style="border-radius:8px; font-size:0.9rem; padding:0.5rem 1.5rem;" @click="saveProfile" :disabled="savingProfile">
+                        <button class="btn btn-outline-secondary fw-semibold"
+                                @click="showEditProfileModal = false">Cancel</button>
+                        <button class="btn-teal-solid"
+                                style="border-radius:8px; font-size:0.9rem; padding:0.5rem 1.5rem;"
+                                @click="saveProfile" :disabled="savingProfile">
                             <span v-if="savingProfile" class="hs-spinner me-2"></span>
                             <i v-if="!savingProfile" class="bi bi-floppy me-2"></i>
                             {{ savingProfile ? 'Saving...' : 'Save Changes' }}
@@ -1050,6 +1149,7 @@ const StudentDashboard = {
                     </div>
                 </div>
             </div>
+
             <!-- Applied Drive Details Modal -->
             <div class="hs-modal-overlay" v-if="showAppliedDriveModal" @click.self="showAppliedDriveModal = false">
                 <div class="hs-modal-box fade-in">
@@ -1058,23 +1158,43 @@ const StudentDashboard = {
                         <div style="flex:1;">
                             <p class="text-muted mb-1" style="font-size:0.8rem; text-transform:uppercase; letter-spacing:1px; font-weight:600;">Your Application</p>
                             <h4 class="fw-bold mb-4" style="color:#0d9488;">{{ chosenAppliedDrive.drive_name }}</h4>
-                            <div class="drive-detail-row"><span class="detail-label"><i class="bi bi-briefcase me-2" style="color:#0d9488;"></i>Job Title</span><span class="detail-value">{{ chosenAppliedDrive.job_title }}</span></div>
-                            <div class="drive-detail-row"><span class="detail-label"><i class="bi bi-file-text me-2" style="color:#0d9488;"></i>Job Description</span><span class="detail-value" style="white-space:pre-wrap;">{{ chosenAppliedDrive.job_description || 'Not provided' }}</span></div>
-                            <div class="drive-detail-row"><span class="detail-label"><i class="bi bi-currency-rupee me-2" style="color:#0d9488;"></i>Salary / Package</span><span class="detail-value">{{ chosenAppliedDrive.salary || 'Not disclosed' }}</span></div>
-                            <div class="drive-detail-row"><span class="detail-label"><i class="bi bi-geo-alt me-2" style="color:#0d9488;"></i>Location</span><span class="detail-value">{{ chosenAppliedDrive.location || 'Not specified' }}</span></div>
+                            <div class="drive-detail-row">
+                                <span class="detail-label"><i class="bi bi-briefcase me-2" style="color:#0d9488;"></i>Job Title</span>
+                                <span class="detail-value">{{ chosenAppliedDrive.job_title }}</span>
+                            </div>
+                            <div class="drive-detail-row">
+                                <span class="detail-label"><i class="bi bi-file-text me-2" style="color:#0d9488;"></i>Job Description</span>
+                                <span class="detail-value" style="white-space:pre-wrap;">{{ chosenAppliedDrive.job_description || 'Not provided' }}</span>
+                            </div>
+                            <div class="drive-detail-row">
+                                <span class="detail-label"><i class="bi bi-currency-rupee me-2" style="color:#0d9488;"></i>Salary / Package</span>
+                                <span class="detail-value">{{ chosenAppliedDrive.salary || 'Not disclosed' }}</span>
+                            </div>
+                            <div class="drive-detail-row">
+                                <span class="detail-label"><i class="bi bi-geo-alt me-2" style="color:#0d9488;"></i>Location</span>
+                                <span class="detail-value">{{ chosenAppliedDrive.location || 'Not specified' }}</span>
+                            </div>
                             <div class="drive-detail-row">
                                 <span class="detail-label"><i class="bi bi-calendar-event me-2" style="color:#0d9488;"></i>Interview Date</span>
                                 <span class="detail-value">
-                                    <span v-if="chosenAppliedDrive.interview_date" style="color:#0d9488; font-weight:700;">📅 {{ chosenAppliedDrive.interview_date }}</span>
+                                    <span v-if="chosenAppliedDrive.interview_date"
+                                          style="color:#0d9488; font-weight:700;">
+                                        📅 {{ chosenAppliedDrive.interview_date }}
+                                    </span>
                                     <span v-else class="text-muted">Not scheduled yet</span>
                                 </span>
                             </div>
                             <div class="drive-detail-row">
                                 <span class="detail-label"><i class="bi bi-flag me-2" style="color:#0d9488;"></i>Your Status</span>
-                                <span class="hs-badge mt-1" :class="statusBadgeClass(chosenAppliedDrive.appStatus)">{{ statusLabel(chosenAppliedDrive.appStatus) }}</span>
+                                <span class="hs-badge mt-1" :class="statusBadgeClass(chosenAppliedDrive.appStatus)">
+                                    {{ statusLabel(chosenAppliedDrive.appStatus) }}
+                                </span>
                             </div>
                         </div>
-                        <div class="company-name-badge" style="background: linear-gradient(135deg, #0f2942, #0d9488);">{{ chosenAppliedDrive.company_name }}</div>
+                        <div class="company-name-badge"
+                             style="background: linear-gradient(135deg, #0f2942, #0d9488);">
+                            {{ chosenAppliedDrive.company_name }}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1082,23 +1202,35 @@ const StudentDashboard = {
     `,
     data() {
         return {
-            allCompanies: [], myApplications: [], loadingCompanies: true, loadingApplications: true, searchText: "",
+            allCompanies: [], myApplications: [],
+            loadingCompanies: true, loadingApplications: true,
+            searchText: "",
             flashMessage: "", flashType: "success",
-            showHistoryModal: false, loadingHistory: false, historyStudentName: "", historyDepartment: "", historyRows: [],
+            // History modal
+            showHistoryModal: false, loadingHistory: false,
+            historyStudentName: "", historyDepartment: "", historyRows: [],
+            // Edit profile modal
             showEditProfileModal: false, savingProfile: false, profileError: "",
             profileForm: { full_name: "", branch: "", study_year: "", cgpa: "", phone: "", skills: "" },
-            showAppliedDriveModal: false, chosenAppliedDrive: {}
+            // Applied drive modal
+            showAppliedDriveModal: false, chosenAppliedDrive: {},
+            // NEW: CSV export state
+            exportingCsv: false
         };
     },
     computed: {
-        studentName() { return currentSession.loggedInUser?.profile?.full_name?.split(" ")[0] || "Student"; },
+        studentName() {
+            return currentSession.loggedInUser?.profile?.full_name?.split(" ")[0] || "Student";
+        },
         filteredCompanies() {
             if (!this.searchText.trim()) return this.allCompanies;
             const q = this.searchText.toLowerCase();
             return this.allCompanies.filter(c => c.company_name.toLowerCase().includes(q));
         }
     },
-    async mounted() { await Promise.all([this.fetchCompanies(), this.fetchMyApplications()]); },
+    async mounted() {
+        await Promise.all([this.fetchCompanies(), this.fetchMyApplications()]);
+    },
     methods: {
         async fetchCompanies() {
             this.loadingCompanies = true;
@@ -1118,18 +1250,31 @@ const StudentDashboard = {
         async openHistoryModal() {
             this.showHistoryModal = true; this.loadingHistory = true;
             const { result, errorMessage } = await callApi("GET", "/student/history");
-            if (result) { this.historyStudentName = result.student.full_name; this.historyDepartment = result.student.branch; this.historyRows = result.history; }
+            if (result) {
+                this.historyStudentName = result.student.full_name;
+                this.historyDepartment  = result.student.branch;
+                this.historyRows        = result.history;
+            }
             if (errorMessage) this.showFlash(errorMessage, "danger");
             this.loadingHistory = false;
         },
         openEditProfileModal() {
             const p = currentSession.loggedInUser?.profile || {};
-            this.profileForm = { full_name: p.full_name || "", branch: p.branch || "", study_year: p.year || "", cgpa: p.cgpa || "", phone: p.phone || "", skills: p.skills || "" };
+            this.profileForm = {
+                full_name:  p.full_name || "",
+                branch:     p.branch    || "",
+                study_year: p.year      || "",
+                cgpa:       p.cgpa      || "",
+                phone:      p.phone     || "",
+                skills:     p.skills    || ""
+            };
             this.profileError = ""; this.showEditProfileModal = true;
         },
         async saveProfile() {
             this.profileError = "";
-            if (!this.profileForm.full_name.trim()) { this.profileError = "Full name cannot be empty."; return; }
+            if (!this.profileForm.full_name.trim()) {
+                this.profileError = "Full name cannot be empty."; return;
+            }
             this.savingProfile = true;
             const payload = {
                 full_name:  this.profileForm.full_name.trim(),
@@ -1159,10 +1304,38 @@ const StudentDashboard = {
             };
             this.showAppliedDriveModal = true;
         },
-        showFlash(msg, type = "success") { this.flashMessage = msg; this.flashType = type; setTimeout(() => { this.flashMessage = ""; }, 4000); },
-        niceDate(iso) { if (!iso) return "—"; return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }); },
-        statusLabel(status)    { return ({ applied: "Applied", shortlisted: "Shortlisted", selected: "Hired", rejected: "Rejected", cancelled: "Cancelled" })[status] || status; },
-        statusBadgeClass(status) { return ({ applied: "hs-badge-info", shortlisted: "hs-badge-warning", selected: "hs-badge-hired", rejected: "hs-badge-danger", cancelled: "hs-badge-danger" })[status] || "hs-badge-info"; }
+        // NEW: trigger the async CSV export
+        async triggerCsvExport() {
+            this.exportingCsv = true;
+            const { result, errorMessage } = await callApi("POST", "/student/export-csv");
+            this.exportingCsv = false;
+            if (errorMessage) { this.showFlash(errorMessage, "danger"); return; }
+            this.showFlash(result.message, "success");
+        },
+        showFlash(msg, type = "success") {
+            this.flashMessage = msg; this.flashType = type;
+            setTimeout(() => { this.flashMessage = ""; }, 6000);
+        },
+        niceDate(iso) {
+            if (!iso) return "—";
+            return new Date(iso).toLocaleDateString("en-IN",
+                { day: "numeric", month: "short", year: "numeric" });
+        },
+        statusLabel(status) {
+            return ({
+                applied: "Applied", shortlisted: "Shortlisted",
+                selected: "Hired",  rejected: "Rejected", cancelled: "Cancelled"
+            })[status] || status;
+        },
+        statusBadgeClass(status) {
+            return ({
+                applied:     "hs-badge-info",
+                shortlisted: "hs-badge-warning",
+                selected:    "hs-badge-hired",
+                rejected:    "hs-badge-danger",
+                cancelled:   "hs-badge-danger"
+            })[status] || "hs-badge-info";
+        }
     }
 };
 

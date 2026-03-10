@@ -7,3 +7,5 @@ redis
 celery
 email-validator
 bcrypt
+flask-mail
+flask-caching

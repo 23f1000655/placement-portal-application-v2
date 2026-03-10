@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 from flask import Flask, render_template
 from flask_security import Security, SQLAlchemyUserDatastore
 from flask_cors import CORS
@@ -5,6 +8,7 @@ import uuid
 
 from config import Config
 from models import database, User, Role
+from extensions import mail, celery, init_celery   # ← NEW
 
 
 def create_app():
@@ -12,11 +16,15 @@ def create_app():
     hiresphere.config.from_object(Config)
 
     database.init_app(hiresphere)
+    mail.init_app(hiresphere)          # ← NEW  (Flask-Mail)
     CORS(hiresphere)
 
     user_datastore = SQLAlchemyUserDatastore(database, User, Role)
     Security(hiresphere, user_datastore, register_blueprint=False)
     hiresphere.user_datastore = user_datastore
+
+    # Wire Celery to the Flask app so tasks get an app context
+    init_celery(hiresphere, celery)    # ← NEW
 
     from routes.auth    import auth_blueprint
     from routes.admin   import admin_blueprint
@@ -40,6 +48,8 @@ def create_app():
     return hiresphere
 
 
+# ── seed helpers ──────────────────────────────────────────────────────────────
+
 def insert_roles():
     all_roles = [
         ("admin",   "Full access — institute placement cell"),
@@ -47,19 +57,15 @@ def insert_roles():
         ("company", "Can post placement drives and review applicants"),
     ]
     for role_name, role_description in all_roles:
-        already_exists = Role.query.filter_by(name=role_name).first()
-        if not already_exists:
+        if not Role.query.filter_by(name=role_name).first():
             database.session.add(Role(name=role_name, description=role_description))
     database.session.commit()
 
 
 def insert_admin():
-    admin_already_exists = User.query.filter(User.roles.any(name="admin")).first()
-    if admin_already_exists:
+    if User.query.filter(User.roles.any(name="admin")).first():
         return
-
     admin_role = Role.query.filter_by(name="admin").first()
-
     admin_user = User(
         email          = "admin@hiresphere.com",
         active         = True,
@@ -68,10 +74,8 @@ def insert_admin():
     )
     admin_user.set_password("Admin@123")
     admin_user.roles.append(admin_role)
-
     database.session.add(admin_user)
     database.session.commit()
-
     print("\n" + "=" * 45)
     print("  Admin account ready!")
     print("  Email   : admin@hiresphere.com")
