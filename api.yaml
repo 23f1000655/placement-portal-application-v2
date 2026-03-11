@@ -1,0 +1,1160 @@
+openapi: 3.0.3
+info:
+  title: HireSphere API
+  description: >
+    REST API for HireSphere — a campus recruitment portal supporting three roles:
+    Admin (placement cell), Company (recruiter), and Student (applicant).
+  version: 1.0.0
+  contact:
+    name: S. Krishna Subramanian
+    email: 23f1000655@ds.study.iitm.ac.in
+
+servers:
+  - url: http://localhost:5000
+    description: Local development server
+
+tags:
+  - name: Auth
+    description: Registration, login, and logout
+  - name: Admin
+    description: Admin-only endpoints for managing users, companies, and drives
+  - name: Company
+    description: Company endpoints for posting drives and managing applications
+  - name: Student
+    description: Student endpoints for browsing companies, applying, and tracking history
+
+# ── Security ──────────────────────────────────────────────────────────────────
+components:
+  securitySchemes:
+    sessionAuth:
+      type: apiKey
+      in: header
+      name: Authentication-Token
+      description: Token returned on login via Flask-Security
+
+  schemas:
+
+    # ── Auth ──────────────────────────────────────────────────────────────────
+    RegisterRequest:
+      type: object
+      required: [email, password, role]
+      properties:
+        email:
+          type: string
+          example: student@example.com
+        password:
+          type: string
+          example: Password@123
+        role:
+          type: string
+          enum: [student, company]
+        full_name:
+          type: string
+          description: Required when role is student
+          example: S. Krishna Subramanian
+        branch:
+          type: string
+          example: Computer Science
+        cgpa:
+          type: number
+          example: 8.5
+        study_year:
+          type: integer
+          example: 3
+        phone:
+          type: string
+          example: "9876543210"
+        skills:
+          type: string
+          example: Python, Flask, Vue
+        company_name:
+          type: string
+          description: Required when role is company
+          example: Infosys Ltd
+        hr_contact:
+          type: string
+          example: hr@infosys.com
+        website:
+          type: string
+          example: https://infosys.com
+        about:
+          type: string
+          example: Global IT services company
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          example: admin@hiresphere.com
+        password:
+          type: string
+          example: Admin@123
+
+    LoginResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Login successful
+        token:
+          type: string
+          example: eyJhbGciOiJIUzI1NiJ9...
+        role:
+          type: string
+          enum: [admin, student, company]
+        user:
+          type: object
+
+    # ── User / Student / Company ──────────────────────────────────────────────
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+        role:
+          type: string
+        active:
+          type: boolean
+        is_blacklisted:
+          type: boolean
+        joined_on:
+          type: string
+          format: date-time
+
+    Student:
+      type: object
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        full_name:
+          type: string
+        branch:
+          type: string
+        cgpa:
+          type: number
+        year:
+          type: integer
+        phone:
+          type: string
+        skills:
+          type: string
+        resume_path:
+          type: string
+        email:
+          type: string
+        is_blacklisted:
+          type: boolean
+        active:
+          type: boolean
+
+    Company:
+      type: object
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        company_name:
+          type: string
+        hr_contact:
+          type: string
+        website:
+          type: string
+        description:
+          type: string
+        approval_status:
+          type: string
+          enum: [pending, approved, rejected]
+        email:
+          type: string
+        is_blacklisted:
+          type: boolean
+        active:
+          type: boolean
+
+    PlacementDrive:
+      type: object
+      properties:
+        id:
+          type: integer
+        company_id:
+          type: integer
+        company_name:
+          type: string
+        drive_name:
+          type: string
+        job_title:
+          type: string
+        job_description:
+          type: string
+        drive_date:
+          type: string
+        salary:
+          type: string
+        location:
+          type: string
+        application_deadline:
+          type: string
+        eligible_branches:
+          type: string
+        minimum_cgpa:
+          type: number
+        eligible_year:
+          type: integer
+        status:
+          type: string
+          enum: [pending, approved, cancelled, completed]
+        created_on:
+          type: string
+          format: date-time
+
+    Application:
+      type: object
+      properties:
+        id:
+          type: integer
+        student_id:
+          type: integer
+        drive_id:
+          type: integer
+        applied_on:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [applied, shortlisted, selected, rejected]
+        interview_date:
+          type: string
+        student_name:
+          type: string
+        student_branch:
+          type: string
+        student_cgpa:
+          type: number
+        student_email:
+          type: string
+        resume_path:
+          type: string
+        drive_name:
+          type: string
+        job_title:
+          type: string
+        salary:
+          type: string
+        location:
+          type: string
+        company_name:
+          type: string
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Unauthorized access
+
+    MessageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Operation successful
+
+# ── Paths ─────────────────────────────────────────────────────────────────────
+paths:
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # AUTH
+  # ════════════════════════════════════════════════════════════════════════════
+
+  /api/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new student or company account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Account created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400':
+          description: Missing or invalid fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Email already registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Authenticate user and return session token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Invalid credentials or blacklisted account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Invalidate current session token
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Logged out successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # ADMIN
+  # ════════════════════════════════════════════════════════════════════════════
+
+  /api/admin/stats:
+    get:
+      tags: [Admin]
+      summary: Get dashboard statistics
+      description: Returns total students, approved companies, active drives, and pending approvals. Response is Redis-cached for 5 minutes.
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Dashboard stats
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_students:
+                    type: integer
+                  total_companies:
+                    type: integer
+                  total_drives:
+                    type: integer
+                  pending_approvals:
+                    type: integer
+        '403':
+          description: Admin access only
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/admin/pending-companies:
+    get:
+      tags: [Admin]
+      summary: List companies awaiting approval
+      description: Redis-cached for 2 minutes.
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: List of pending companies
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  companies:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Company'
+
+  /api/admin/companies:
+    get:
+      tags: [Admin]
+      summary: List all approved companies
+      description: Supports optional search query parameter. Redis-cached for 5 minutes (non-search only).
+      security:
+        - sessionAuth: []
+      parameters:
+        - in: query
+          name: search
+          schema:
+            type: string
+          description: Filter by company name or email
+      responses:
+        '200':
+          description: List of approved companies
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  companies:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Company'
+
+  /api/admin/students:
+    get:
+      tags: [Admin]
+      summary: List all registered students
+      description: Supports optional search query parameter. Redis-cached for 5 minutes (non-search only).
+      security:
+        - sessionAuth: []
+      parameters:
+        - in: query
+          name: search
+          schema:
+            type: string
+          description: Filter by name, email, or branch
+      responses:
+        '200':
+          description: List of students
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  students:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Student'
+
+  /api/admin/ongoing-drives:
+    get:
+      tags: [Admin]
+      summary: List all active placement drives
+      description: Supports optional search query parameter. Redis-cached for 5 minutes (non-search only).
+      security:
+        - sessionAuth: []
+      parameters:
+        - in: query
+          name: search
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of active drives
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  drives:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PlacementDrive'
+
+  /api/admin/applications:
+    get:
+      tags: [Admin]
+      summary: List all submitted applications
+      description: Redis-cached for 3 minutes.
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: List of all applications
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  applications:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Application'
+
+  /api/admin/approve-company/{company_id}:
+    post:
+      tags: [Admin]
+      summary: Approve a company registration
+      description: Also approves all pending drives belonging to that company. Invalidates relevant Redis cache keys.
+      security:
+        - sessionAuth: []
+      parameters:
+        - in: path
+          name: company_id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Company approved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '404':
+          description: Company not found
+
+  /api/admin/reject-company/{company_id}:
+    post:
+      tags: [Admin]
+      summary: Reject a company registration
+      security:
+        - sessionAuth: []
+      parameters:
+        - in: path
+          name: company_id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Company rejected
+        '404':
+          description: Company not found
+
+  /api/admin/blacklist-company/{company_id}:
+    post:
+      tags: [Admin]
+      summary: Blacklist a company and cancel all their drives
+      security:
+        - sessionAuth: []
+      parameters:
+        - in: path
+          name: company_id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Company blacklisted
+        '404':
+          description: Company not found
+
+  /api/admin/unblacklist-company/{company_id}:
+    post:
+      tags: [Admin]
+      summary: Reinstate a blacklisted company
+      security:
+        - sessionAuth: []
+      parameters:
+        - in: path
+          name: company_id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Company reinstated
+        '404':
+          description: Company not found
+
+  /api/admin/blacklist-student/{student_id}:
+    post:
+      tags: [Admin]
+      summary: Blacklist a student account
+      security:
+        - sessionAuth: []
+      parameters:
+        - in: path
+          name: student_id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Student blacklisted
+        '404':
+          description: Student not found
+
+  /api/admin/unblacklist-student/{student_id}:
+    post:
+      tags: [Admin]
+      summary: Reinstate a blacklisted student
+      security:
+        - sessionAuth: []
+      parameters:
+        - in: path
+          name: student_id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Student reinstated
+        '404':
+          description: Student not found
+
+  /api/admin/mark-drive-complete/{drive_id}:
+    post:
+      tags: [Admin]
+      summary: Mark a placement drive as completed
+      security:
+        - sessionAuth: []
+      parameters:
+        - in: path
+          name: drive_id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Drive marked complete
+        '404':
+          description: Drive not found
+
+  /api/admin/student-resume/{student_id}:
+    get:
+      tags: [Admin]
+      summary: View a student's uploaded resume PDF
+      security:
+        - sessionAuth: []
+      parameters:
+        - in: path
+          name: student_id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: PDF file
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Student or resume not found
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # COMPANY
+  # ════════════════════════════════════════════════════════════════════════════
+
+  /api/company/my-drives:
+    get:
+      tags: [Company]
+      summary: List drives posted by the current company
+      description: Redis-cached per company for 3 minutes.
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: List of company's drives
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  drives:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PlacementDrive'
+        '403':
+          description: Company not approved yet
+
+  /api/company/create-drive:
+    post:
+      tags: [Company]
+      summary: Post a new placement drive
+      description: Drive is automatically set to approved status. Invalidates company drives cache and admin caches.
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [drive_name, job_title]
+              properties:
+                drive_name:
+                  type: string
+                  example: "Campus Hiring 2026"
+                job_title:
+                  type: string
+                  example: "Software Engineer"
+                job_description:
+                  type: string
+                drive_date:
+                  type: string
+                  example: "2026-04-15"
+                salary:
+                  type: string
+                  example: "12 LPA"
+                location:
+                  type: string
+                  example: "Bangalore"
+                application_deadline:
+                  type: string
+                  example: "2026-04-01"
+                eligible_branches:
+                  type: string
+                  example: "CSE, ECE, IT"
+                minimum_cgpa:
+                  type: number
+                  example: 7.0
+                eligible_year:
+                  type: integer
+                  example: 3
+      responses:
+        '201':
+          description: Drive created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  drive:
+                    $ref: '#/components/schemas/PlacementDrive'
+        '400':
+          description: Missing required fields
+
+  /api/company/drive/{drive_id}/applications:
+    get:
+      tags: [Company]
+      summary: View all applicants for a specific drive
+      description: Redis-cached per drive for 3 minutes.
+      security:
+        - sessionAuth: []
+      parameters:
+        - in: path
+          name: drive_id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Drive details and applications list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  drive:
+                    $ref: '#/components/schemas/PlacementDrive'
+                  applications:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Application'
+        '404':
+          description: Drive not found or does not belong to this company
+
+  /api/company/drive/{drive_id}/cancel:
+    post:
+      tags: [Company]
+      summary: Cancel a placement drive
+      security:
+        - sessionAuth: []
+      parameters:
+        - in: path
+          name: drive_id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Drive cancelled
+        '400':
+          description: Drive is already closed
+        '404':
+          description: Drive not found
+
+  /api/company/drive/{drive_id}/mark-complete:
+    post:
+      tags: [Company]
+      summary: Mark a drive as completed
+      security:
+        - sessionAuth: []
+      parameters:
+        - in: path
+          name: drive_id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Drive marked complete
+        '404':
+          description: Drive not found
+
+  /api/company/application/{application_id}/update-status:
+    post:
+      tags: [Company]
+      summary: Update the status of a single application
+      description: Allowed statuses are applied, shortlisted, selected, rejected. Invalidates drive applications cache.
+      security:
+        - sessionAuth: []
+      parameters:
+        - in: path
+          name: application_id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [applied, shortlisted, selected, rejected]
+      responses:
+        '200':
+          description: Status updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  application:
+                    $ref: '#/components/schemas/Application'
+        '400':
+          description: Invalid status value
+        '403':
+          description: Application does not belong to this company
+        '404':
+          description: Application not found
+
+  /api/company/bulk-update-statuses:
+    post:
+      tags: [Company]
+      summary: Bulk update multiple application statuses at once
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [updates]
+              properties:
+                updates:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      application_id:
+                        type: integer
+                      status:
+                        type: string
+                        enum: [applied, shortlisted, selected, rejected]
+      responses:
+        '200':
+          description: Statuses saved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+
+  /api/company/student-resume/{student_id}:
+    get:
+      tags: [Company]
+      summary: View a student's resume PDF
+      security:
+        - sessionAuth: []
+      parameters:
+        - in: path
+          name: student_id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: PDF file
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Resume not found
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # STUDENT
+  # ════════════════════════════════════════════════════════════════════════════
+
+  /api/student/profile:
+    get:
+      tags: [Student]
+      summary: Get current student's profile
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Student profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  student:
+                    $ref: '#/components/schemas/Student'
+
+  /api/student/update-profile:
+    post:
+      tags: [Student]
+      summary: Update current student's profile
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                full_name:
+                  type: string
+                branch:
+                  type: string
+                cgpa:
+                  type: number
+                study_year:
+                  type: integer
+                phone:
+                  type: string
+                skills:
+                  type: string
+      responses:
+        '200':
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  student:
+                    $ref: '#/components/schemas/Student'
+
+  /api/student/companies:
+    get:
+      tags: [Student]
+      summary: Browse all approved companies and their open drives
+      description: Supports optional search. Redis-cached for 5 minutes (non-search only).
+      security:
+        - sessionAuth: []
+      parameters:
+        - in: query
+          name: search
+          schema:
+            type: string
+          description: Filter by company name or description
+      responses:
+        '200':
+          description: List of approved companies
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  companies:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Company'
+
+  /api/student/company/{company_id}:
+    get:
+      tags: [Student]
+      summary: View company details and open drives with eligibility info
+      description: Includes already_applied flag per drive for current student. Redis-cached per student per company for 2 minutes.
+      security:
+        - sessionAuth: []
+      parameters:
+        - in: path
+          name: company_id
+          required: true
+          schema:
+            type: integer
+        - in: query
+          name: search
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Company detail with drives
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  company:
+                    $ref: '#/components/schemas/Company'
+                  drives:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PlacementDrive'
+        '404':
+          description: Company not found
+
+  /api/student/apply/{drive_id}:
+    post:
+      tags: [Student]
+      summary: Apply to a placement drive with resume upload
+      description: >
+        Validates CGPA, study year, and branch eligibility before accepting.
+        Accepts a PDF resume as multipart/form-data. Updates student resume on file.
+        Invalidates student application cache.
+      security:
+        - sessionAuth: []
+      parameters:
+        - in: path
+          name: drive_id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [resume]
+              properties:
+                resume:
+                  type: string
+                  format: binary
+                  description: PDF resume file
+      responses:
+        '201':
+          description: Application submitted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  application:
+                    $ref: '#/components/schemas/Application'
+        '400':
+          description: Drive not open or no resume uploaded
+        '403':
+          description: Eligibility check failed (CGPA / year / branch)
+        '404':
+          description: Drive not found
+        '409':
+          description: Already applied to this drive
+
+  /api/student/my-applications:
+    get:
+      tags: [Student]
+      summary: View current student's application list
+      description: Redis-cached per student for 1 minute.
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: List of applications
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  applications:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Application'
+
+  /api/student/history:
+    get:
+      tags: [Student]
+      summary: Full placement history with drive and company details
+      description: Redis-cached per student for 2 minutes.
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Placement history
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  student:
+                    $ref: '#/components/schemas/Student'
+                  history:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        application_id:
+                          type: integer
+                        drive_name:
+                          type: string
+                        job_title:
+                          type: string
+                        location:
+                          type: string
+                        company_name:
+                          type: string
+                        applied_on:
+                          type: string
+                          format: date-time
+                        interview_date:
+                          type: string
+                        status:
+                          type: string
+
+  /api/student/my-resume:
+    get:
+      tags: [Student]
+      summary: Serve the student's uploaded resume PDF
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: PDF file
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: No resume uploaded yet
+
+  /api/student/export-csv:
+    post:
+      tags: [Student]
+      summary: Trigger async CSV export of application history via email
+      description: >
+        Queues a Celery background task that builds a CSV of the student's full
+        application history and emails it as an attachment. Returns 202 immediately.
+      security:
+        - sessionAuth: []
+      responses:
+        '202':
+          description: Export queued — CSV will be delivered to student's registered email
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'

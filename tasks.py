@@ -209,18 +209,18 @@ def send_deadline_reminders():
 # ══════════════════════════════════════════════════════════════════════════════
 
 @celery.task(name="tasks.send_monthly_report")
-def send_monthly_report():
-    """
-    Runs on the 1st of every month at 07:00.
-    Builds an HTML report for the previous calendar month and emails it to
-    the admin address configured in ADMIN_EMAIL.
-    """
-    today          = date.today()
-    # Previous month
-    first_this     = today.replace(day=1)
-    last_month_end = first_this - timedelta(days=1)
-    month_start    = last_month_end.replace(day=1)
-    month_end      = last_month_end
+def send_monthly_report(current_month=False):
+    today = date.today()
+    if current_month:
+        # Report from 1st of current month up to today
+        month_start = today.replace(day=1)
+        month_end   = today
+    else:
+        # Default — report on the previous full calendar month
+        first_this     = today.replace(day=1)
+        last_month_end = first_this - timedelta(days=1)
+        month_start    = last_month_end.replace(day=1)
+        month_end      = last_month_end
 
     month_label = month_start.strftime("%B %Y")   # e.g. "May 2025"
 

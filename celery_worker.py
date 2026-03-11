@@ -15,3 +15,5 @@ from extensions import celery, init_celery
 
 flask_app = create_app()
 init_celery(flask_app, celery)
+
+import tasks

@@ -8,7 +8,7 @@ import uuid
 
 from config import Config
 from models import database, User, Role
-from extensions import mail, celery, init_celery   # ← NEW
+from extensions import mail, cache, celery, init_celery
 
 
 def create_app():
@@ -16,7 +16,8 @@ def create_app():
     hiresphere.config.from_object(Config)
 
     database.init_app(hiresphere)
-    mail.init_app(hiresphere)          # ← NEW  (Flask-Mail)
+    mail.init_app(hiresphere)          # Flask-Mail
+    cache.init_app(hiresphere)         # Flask-Caching
     CORS(hiresphere)
 
     user_datastore = SQLAlchemyUserDatastore(database, User, Role)
@@ -24,7 +25,7 @@ def create_app():
     hiresphere.user_datastore = user_datastore
 
     # Wire Celery to the Flask app so tasks get an app context
-    init_celery(hiresphere, celery)    # ← NEW
+    init_celery(hiresphere, celery)
 
     from routes.auth    import auth_blueprint
     from routes.admin   import admin_blueprint
