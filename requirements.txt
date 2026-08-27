@@ -10,3 +10,4 @@ bcrypt
 flask-mail
 flask-caching
 gunicorn
+python-dotenv
